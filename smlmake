@@ -1,0 +1,108 @@
+#/bin/sh
+# vim: set filetype=tcl : \
+exec tclsh "$0" ${1+"$@"}
+
+package require cmdline
+
+proc replace_ext {files from to} {
+  foreach file $files {
+    lappend replaced [regsub "$from\$" $file $to]
+  }
+  return $replaced
+}
+
+proc opt {file} {
+  if {[file exists $file]} {
+    return $file
+  } else {
+    return ""
+  }
+}
+
+namespace eval mlton {
+  proc generate {dir} {
+    variable targets; variable c_srcs; variable sml_srcs
+    set Makefile [open [file join $dir Makefile.mlton] w]
+    foreach target $targets {
+      set mlb [open [file join $dir $target.mlb] w]
+      puts $mlb {$(SML_LIB)/basis/basis.mlb}
+      foreach sml_src $sml_srcs($target) {
+        puts $mlb $sml_src
+      }
+      close $mlb
+      puts $Makefile "all: $targets"
+      puts $Makefile "$target: $sml_srcs($target) $c_srcs($target)"
+      puts $Makefile "\tmlton \\"
+      puts $Makefile "\t-output '$target' \\"
+      puts $Makefile "\t-default-ann 'allowFFI true' \\"
+      puts $Makefile "\t$target.mlb $c_srcs($target)"
+      puts $Makefile "clean:"
+      puts $Makefile "\trm -f $target"
+    }
+    close $Makefile
+  }
+}
+
+namespace eval smlsharp {
+  proc generate {dir} {
+    variable targets; variable c_srcs; variable sml_srcs
+    set Makefile [open [file join $dir Makefile.smlsharp] w]
+    set cleaned $targets
+    puts $Makefile "all: $targets"
+    puts $Makefile "%.o: %.sml"
+    puts $Makefile "\tsmlsharp -c \$<"
+    puts $Makefile "%.o: %.c"
+    puts $Makefile "\t\cc -m32 -c \$<"
+    foreach target $targets {
+      set sml_objs [replace_ext $sml_srcs($target) .sml .o]
+      set c_objs [replace_ext $c_srcs($target) .c .o]
+      set cleaned [concat $cleaned $sml_objs $c_objs]
+      puts $Makefile "$target: $target.smi $sml_objs $c_objs"
+      puts $Makefile "\tsmlsharp -o $target $target.smi $c_objs"
+      eval exec smlsharp -MM $sml_srcs($target) >@ $Makefile
+      eval exec cc -MM $c_srcs($target) >@ $Makefile
+    }
+    puts $Makefile "clean:"
+    puts $Makefile "\trm -f $cleaned"
+    close $Makefile
+  }
+}
+
+# start up
+set options {
+    {f.arg "Smlmakefile" "Smlmakefile"}
+    {smlc.arg  "mlton" "SML compiler (mlton, smlsharp, mosml)"}
+}
+set usage ": smlmake \[options]\noptions:"
+array set params [::cmdline::getoptions argv $options $usage]
+set Smlmakefile $params(f)
+set smlc $params(smlc)
+set output_dir [file dirname $Smlmakefile]
+
+namespace eval $smlc {
+  proc make {target args} {
+    variable targets; variable c_srcs; variable sml_srcs
+    if {[llength $args] > 0 && [lindex $args 0] == "from"} {
+      set args [lrange $args 1 end]
+    }
+    if {[llength $args] == 0} {
+      error {wrong # args: should be "make target ?from? source..."}
+    }
+    lappend targets $target
+    foreach src $args {
+      if {$src == ""} continue
+      if {[file extension $src] == ".sml"} {
+        lappend sml_srcs($target) $src
+      } else {
+        lappend c_srcs($target) $src
+      }
+    }
+  }
+}
+
+# evaluate Smlmakefile
+namespace inscope ::$smlc source $Smlmakefile
+
+# generate Makefile
+::${smlc}::generate $output_dir
+
