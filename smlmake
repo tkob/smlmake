@@ -82,6 +82,25 @@ namespace eval smlsharp {
   }
 }
 
+namespace eval poly {
+  proc generate {dir} {
+    variable targets; variable c_srcs; variable sml_srcs
+    set Makefile [open [file join $dir Makefile.poly] w]
+    set cleaned $targets
+    puts $Makefile "all: $targets"
+    foreach target $targets {
+      set bundle "$target-bundle.sml"
+      puts $Makefile "$target: $bundle"
+      puts $Makefile "\tpolyc -o $target $bundle" 
+      puts $Makefile "$bundle: $sml_srcs($target)"
+      puts $Makefile "\tcat $sml_srcs($target) > $bundle" 
+    }
+    puts $Makefile "clean:"
+    puts $Makefile "\trm -f $target $bundle"
+    close $Makefile
+  }
+}
+
 # start up
 set options {
     {f.arg "Smlmakefile" "Smlmakefile"}
