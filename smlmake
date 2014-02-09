@@ -90,13 +90,19 @@ namespace eval poly {
     puts $Makefile "all: $targets"
     foreach target $targets {
       set bundle "$target-bundle.sml"
-      puts $Makefile "$target: $bundle"
+      set dll "lib$target.so"
+      lappend cleaned $bundle $dll
+      puts $Makefile "$target: $bundle $dll"
       puts $Makefile "\tpolyc -o $target $bundle" 
       puts $Makefile "$bundle: $sml_srcs($target)"
       puts $Makefile "\tcat $sml_srcs($target) > $bundle" 
+      if {$c_srcs($target) != {}} {
+        puts $Makefile "$dll: $c_srcs($target)"
+        puts $Makefile "\tcc -shared -o $dll $c_srcs($target)"
+      }
     }
     puts $Makefile "clean:"
-    puts $Makefile "\trm -f $target $bundle"
+    puts $Makefile "\trm -f $cleaned"
     close $Makefile
   }
 }
