@@ -5,6 +5,7 @@ exec tclsh "$0" ${1+"$@"}
 package require cmdline
 
 proc replace_ext {files from to} {
+  set replaced {}
   foreach file $files {
     lappend replaced [regsub "$from\$" $file $to]
   }
@@ -13,6 +14,14 @@ proc replace_ext {files from to} {
 
 proc opt {file} {
   if {[file exists $file]} {
+    return $file
+  } else {
+    return ""
+  }
+}
+
+proc cond {pred file} {
+  if $pred {
     return $file
   } else {
     return ""
@@ -54,13 +63,18 @@ namespace eval smlsharp {
     puts $Makefile "%.o: %.c"
     puts $Makefile "\t\cc -m32 -c \$<"
     foreach target $targets {
+      set smis [replace_ext $sml_srcs($target) .sml .smi]
       set sml_objs [replace_ext $sml_srcs($target) .sml .o]
       set c_objs [replace_ext $c_srcs($target) .c .o]
       set cleaned [concat $cleaned $sml_objs $c_objs]
-      puts $Makefile "$target: $target.smi $sml_objs $c_objs"
-      puts $Makefile "\tsmlsharp -o $target $target.smi $c_objs"
-      eval exec smlsharp -MM $sml_srcs($target) >@ $Makefile
-      eval exec cc -MM $c_srcs($target) >@ $Makefile
+      puts $Makefile "$target: [lindex $smis end] $sml_objs $c_objs"
+      puts $Makefile "\tsmlsharp -o $target [lindex $smis end] $c_objs"
+      if {$sml_srcs($target) != {}} {
+        eval exec smlsharp -MM $sml_srcs($target) >@ $Makefile
+      }
+      if {$c_srcs($target) != {}} {
+        eval exec cc -MM $c_srcs($target) >@ $Makefile
+      }
     }
     puts $Makefile "clean:"
     puts $Makefile "\trm -f $cleaned"
@@ -89,6 +103,8 @@ namespace eval $smlc {
       error {wrong # args: should be "make target ?from? source..."}
     }
     lappend targets $target
+    set sml_srcs($target) {}
+    set c_srcs($target) {}
     foreach src $args {
       if {$src == ""} continue
       if {[file extension $src] == ".sml"} {
