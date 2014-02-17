@@ -61,7 +61,7 @@ namespace eval smlsharp {
     puts $Makefile "%.o: %.sml"
     puts $Makefile "\tsmlsharp -c \$<"
     puts $Makefile "%.o: %.c"
-    puts $Makefile "\t\cc -m32 -c \$<"
+    puts $Makefile "\tcc -m32 -c \$<"
     foreach target $targets {
       set smis [replace_ext $sml_srcs($target) .sml .smi]
       set sml_objs [replace_ext $sml_srcs($target) .sml .o]
@@ -97,9 +97,18 @@ namespace eval poly {
       puts $Makefile "$bundle: $sml_srcs($target)"
       puts $Makefile "\tcat $sml_srcs($target) > $bundle" 
       if {$c_srcs($target) != {}} {
-        puts $Makefile "$dll: $c_srcs($target)"
-        puts $Makefile "\tcc -shared -o $dll $c_srcs($target)"
+        set los [replace_ext $c_srcs($target) .c .lo]
+        puts $Makefile "$dll: $los jlibtool"
+        puts $Makefile "\t./jlibtool -o $dll $los"
+        foreach c_src $c_srcs($target) {
+          set lo [replace_ext $c_src .c .lo]
+          puts $Makefile "$lo: $c_src jlibtool"
+          puts $Makefile "\t./jlibtool -c $< -o $@"
+        }
       }
+      puts $Makefile ".PHONY: run-$target"
+      puts $Makefile "run-$target:"
+      puts $Makefile "\t./jlibtool --mode=execute ./$target"
     }
     puts $Makefile "clean:"
     puts $Makefile "\trm -f $cleaned"
