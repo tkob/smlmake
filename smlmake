@@ -78,19 +78,69 @@ proc generate-smlsharp {dir} {
   close $Makefile
 }
 
+set polybuild {#!/usr/bin/expect -f
+set prompt "\n> "
+set errmsg "Error"
+
+set output [lindex $argv 0]
+set sources [lrange $argv 1 end]
+
+spawn poly
+expect -- $prompt
+
+set errorOccurred 0
+
+foreach source $sources {
+  send "use \"$source\";\r"
+  expect {
+    $errmsg {
+      set errorOccurred 1
+      break
+    }
+    -- $prompt {}
+  }
+}
+
+if {!$errorOccurred} {
+  send "PolyML.export(\"$output\", main);\r"
+  expect {
+    $errmsg {
+      set errorOccurred 1
+    }
+    -- $prompt {}
+  }
+}
+
+send "\004"
+expect eof
+exit $errorOccurred
+}
+# end of polybuild
+
+proc write_polybuild {dir} {
+  variable polybuild
+  set f [open [file join $dir polybuild.tcl] w]
+  puts -nonewline $f $polybuild
+  close $f
+}
+
 proc generate-poly {dir} {
   variable targets; variable c_srcs; variable sml_srcs
+  write_polybuild $dir
   set Makefile [open [file join $dir Makefile.poly] w]
   set cleaned $targets
   puts $Makefile "all: $targets"
   foreach target $targets {
-    set bundle "$target-bundle.sml"
-    set dll "lib$target.so"
-    lappend cleaned $bundle $dll
-    puts $Makefile "$target: $bundle $dll"
-    puts $Makefile "\tpolyc -o $target $bundle" 
-    puts $Makefile "$bundle: $sml_srcs($target)"
-    puts $Makefile "\tcat $sml_srcs($target) > $bundle" 
+    if {[llength $c_srcs($target)] > 0} {
+      set dll "lib$target.so"
+      lappend cleaned $dll
+    } else {
+      set dll {}
+    }
+    puts $Makefile "$target: $sml_srcs($target) $dll"
+    puts $Makefile "\texpect -f ./polybuild.tcl $target $sml_srcs($target)"
+    puts $Makefile "\tpolyc -o $target $target.o"
+    lappend cleaned $target.o
     if {$c_srcs($target) != {}} {
       set los [replace_ext $c_srcs($target) .c .lo]
       puts $Makefile "$dll: $los jlibtool"
