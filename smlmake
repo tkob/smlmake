@@ -28,91 +28,106 @@ proc cond {pred file} {
   }
 }
 
-namespace eval mlton {
-  proc generate {dir} {
-    variable targets; variable c_srcs; variable sml_srcs
-    set Makefile [open [file join $dir Makefile.mlton] w]
-    puts $Makefile "all: $targets"
-    foreach target $targets {
-      set mlb [open [file join $dir $target.mlb] w]
-      puts $mlb {$(SML_LIB)/basis/basis.mlb}
-      foreach sml_src $sml_srcs($target) {
-        puts $mlb $sml_src
-      }
-      close $mlb
-      puts $Makefile "$target: $sml_srcs($target) $c_srcs($target)"
-      puts $Makefile "\tmlton \\"
-      puts $Makefile "\t-output '$target' \\"
-      puts $Makefile "\t-default-ann 'allowFFI true' \\"
-      puts $Makefile "\t$target.mlb $c_srcs($target)"
+proc generate-mlton {dir} {
+  variable targets; variable c_srcs; variable sml_srcs
+  set Makefile [open [file join $dir Makefile.mlton] w]
+  puts $Makefile "all: $targets"
+  foreach target $targets {
+    set mlb [open [file join $dir $target.mlb] w]
+    puts $mlb {$(SML_LIB)/basis/basis.mlb}
+    foreach sml_src $sml_srcs($target) {
+      puts $mlb $sml_src
     }
-    puts $Makefile "clean:"
-    puts $Makefile "\trm -f $targets"
-    close $Makefile
+    close $mlb
+    puts $Makefile "$target: $sml_srcs($target) $c_srcs($target)"
+    puts $Makefile "\tmlton \\"
+    puts $Makefile "\t-output '$target' \\"
+    puts $Makefile "\t-default-ann 'allowFFI true' \\"
+    puts $Makefile "\t$target.mlb $c_srcs($target)"
   }
+  puts $Makefile "clean:"
+  puts $Makefile "\trm -f $targets"
+  close $Makefile
 }
 
-namespace eval smlsharp {
-  proc generate {dir} {
-    variable targets; variable c_srcs; variable sml_srcs
-    set Makefile [open [file join $dir Makefile.smlsharp] w]
-    set cleaned $targets
-    puts $Makefile "all: $targets"
-    puts $Makefile "%.o: %.sml"
-    puts $Makefile "\tsmlsharp -c \$<"
-    puts $Makefile "%.o: %.c"
-    puts $Makefile "\tcc -m32 -c \$<"
-    foreach target $targets {
-      set smis [replace_ext $sml_srcs($target) .sml .smi]
-      set sml_objs [replace_ext $sml_srcs($target) .sml .o]
-      set c_objs [replace_ext $c_srcs($target) .c .o]
-      set cleaned [concat $cleaned $sml_objs $c_objs]
-      puts $Makefile "$target: [lindex $smis end] $sml_objs $c_objs"
-      puts $Makefile "\tsmlsharp -o $target [lindex $smis end] $c_objs"
-      if {$sml_srcs($target) != {}} {
-        eval exec smlsharp -MM $sml_srcs($target) >@ $Makefile
-      }
-      if {$c_srcs($target) != {}} {
-        eval exec cc -MM $c_srcs($target) >@ $Makefile
-      }
+proc generate-smlsharp {dir} {
+  variable targets; variable c_srcs; variable sml_srcs
+  set Makefile [open [file join $dir Makefile.smlsharp] w]
+  set cleaned $targets
+  puts $Makefile "all: $targets"
+  puts $Makefile "%.o: %.sml"
+  puts $Makefile "\tsmlsharp -c \$<"
+  puts $Makefile "%.o: %.c"
+  puts $Makefile "\tcc -m32 -c \$<"
+  foreach target $targets {
+    set smis [replace_ext $sml_srcs($target) .sml .smi]
+    set sml_objs [replace_ext $sml_srcs($target) .sml .o]
+    set c_objs [replace_ext $c_srcs($target) .c .o]
+    set cleaned [concat $cleaned $sml_objs $c_objs]
+    puts $Makefile "$target: [lindex $smis end] $sml_objs $c_objs"
+    puts $Makefile "\tsmlsharp -o $target [lindex $smis end] $c_objs"
+    if {$sml_srcs($target) != {}} {
+      eval exec smlsharp -MM $sml_srcs($target) >@ $Makefile
     }
-    puts $Makefile "clean:"
-    puts $Makefile "\trm -f $cleaned"
-    close $Makefile
+    if {$c_srcs($target) != {}} {
+      eval exec cc -MM $c_srcs($target) >@ $Makefile
+    }
   }
+  puts $Makefile "clean:"
+  puts $Makefile "\trm -f $cleaned"
+  close $Makefile
 }
 
-namespace eval poly {
-  proc generate {dir} {
-    variable targets; variable c_srcs; variable sml_srcs
-    set Makefile [open [file join $dir Makefile.poly] w]
-    set cleaned $targets
-    puts $Makefile "all: $targets"
-    foreach target $targets {
-      set bundle "$target-bundle.sml"
-      set dll "lib$target.so"
-      lappend cleaned $bundle $dll
-      puts $Makefile "$target: $bundle $dll"
-      puts $Makefile "\tpolyc -o $target $bundle" 
-      puts $Makefile "$bundle: $sml_srcs($target)"
-      puts $Makefile "\tcat $sml_srcs($target) > $bundle" 
-      if {$c_srcs($target) != {}} {
-        set los [replace_ext $c_srcs($target) .c .lo]
-        puts $Makefile "$dll: $los jlibtool"
-        puts $Makefile "\t./jlibtool -o $dll $los"
-        foreach c_src $c_srcs($target) {
-          set lo [replace_ext $c_src .c .lo]
-          puts $Makefile "$lo: $c_src jlibtool"
-          puts $Makefile "\t./jlibtool -c $< -o $@"
-        }
+proc generate-poly {dir} {
+  variable targets; variable c_srcs; variable sml_srcs
+  set Makefile [open [file join $dir Makefile.poly] w]
+  set cleaned $targets
+  puts $Makefile "all: $targets"
+  foreach target $targets {
+    set bundle "$target-bundle.sml"
+    set dll "lib$target.so"
+    lappend cleaned $bundle $dll
+    puts $Makefile "$target: $bundle $dll"
+    puts $Makefile "\tpolyc -o $target $bundle" 
+    puts $Makefile "$bundle: $sml_srcs($target)"
+    puts $Makefile "\tcat $sml_srcs($target) > $bundle" 
+    if {$c_srcs($target) != {}} {
+      set los [replace_ext $c_srcs($target) .c .lo]
+      puts $Makefile "$dll: $los jlibtool"
+      puts $Makefile "\t./jlibtool -o $dll $los"
+      foreach c_src $c_srcs($target) {
+        set lo [replace_ext $c_src .c .lo]
+        puts $Makefile "$lo: $c_src jlibtool"
+        puts $Makefile "\t./jlibtool -c $< -o $@"
       }
-      puts $Makefile ".PHONY: run-$target"
-      puts $Makefile "run-$target:"
-      puts $Makefile "\t./jlibtool --mode=execute ./$target"
     }
-    puts $Makefile "clean:"
-    puts $Makefile "\trm -f $cleaned"
-    close $Makefile
+    puts $Makefile ".PHONY: run-$target"
+    puts $Makefile "run-$target:"
+    puts $Makefile "\t./jlibtool --mode=execute ./$target"
+  }
+  puts $Makefile "clean:"
+  puts $Makefile "\trm -f $cleaned"
+  close $Makefile
+}
+
+proc make {target args} {
+  variable targets; variable c_srcs; variable sml_srcs
+  if {[llength $args] > 0 && [lindex $args 0] == "from"} {
+    set args [lrange $args 1 end]
+  }
+  if {[llength $args] == 0} {
+    error {wrong # args: should be "make target ?from? source..."}
+  }
+  lappend targets $target
+  set sml_srcs($target) {}
+  set c_srcs($target) {}
+  foreach src $args {
+    if {$src == ""} continue
+    if {[file extension $src] == ".sml"} {
+      lappend sml_srcs($target) $src
+    } else {
+      lappend c_srcs($target) $src
+    }
   }
 }
 
@@ -127,32 +142,9 @@ set Smlmakefile $params(f)
 set smlc $params(smlc)
 set output_dir [file dirname $Smlmakefile]
 
-namespace eval $smlc {
-  proc make {target args} {
-    variable targets; variable c_srcs; variable sml_srcs
-    if {[llength $args] > 0 && [lindex $args 0] == "from"} {
-      set args [lrange $args 1 end]
-    }
-    if {[llength $args] == 0} {
-      error {wrong # args: should be "make target ?from? source..."}
-    }
-    lappend targets $target
-    set sml_srcs($target) {}
-    set c_srcs($target) {}
-    foreach src $args {
-      if {$src == ""} continue
-      if {[file extension $src] == ".sml"} {
-        lappend sml_srcs($target) $src
-      } else {
-        lappend c_srcs($target) $src
-      }
-    }
-  }
-}
-
 # evaluate Smlmakefile
-namespace inscope ::$smlc source $Smlmakefile
+source $Smlmakefile
 
 # generate Makefile
-::${smlc}::generate $output_dir
+generate-$smlc $output_dir
 
